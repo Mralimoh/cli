@@ -25,6 +25,8 @@ struct SpicetifyCli {
     #[arg(long, global = true)]
     offline_bnk_dir: Option<String>,
 
+    #[arg(long, hide = true)]
+    print_install_architecture: bool,
     #[command(subcommand)]
     command: Option<CliCommand>,
 }
@@ -91,8 +93,12 @@ enum CliCommand {
 enum CliSpotifyAction {
     #[command(about = "Download Spotify, apply Spicetify, and add a desktop launcher")]
     Install {
-        #[arg(long, value_enum, default_value = "stable")]
-        channel: SpotifyChannel,
+        #[arg(
+            long,
+            value_enum,
+            help = "Keep the installed channel; new installations default to stable"
+        )]
+        channel: Option<SpotifyChannel>,
     },
     #[command(about = "Update the Spotify installation managed by Spicetify")]
     Update {
@@ -164,6 +170,11 @@ enum CliPkgAction {
     Delete { id: String },
     #[command(about = "Enable a package")]
     Enable { id: String },
+    #[command(about = "Update installed modules to the registry's versions (run apply afterwards)")]
+    Update {
+        #[arg(help = "Module identifier to update (updates all if omitted)")]
+        id: Option<String>,
+    },
 }
 
 impl From<CliCommand> for Command {
@@ -196,7 +207,9 @@ impl From<CliCommand> for Command {
             CliCommand::Spotify { action } => {
                 use spicetify::commands::spotify::Action;
                 Command::Spotify(match action {
-                    CliSpotifyAction::Install { channel } => Action::Install(channel.into()),
+                    CliSpotifyAction::Install { channel } => {
+                        Action::Install(channel.map(Into::into))
+                    }
                     CliSpotifyAction::Update { channel } => Action::Update(channel.map(Into::into)),
                     CliSpotifyAction::Status => Action::Status,
                 })
@@ -224,6 +237,7 @@ impl From<CliPkgAction> for PkgAction {
             CliPkgAction::Install { id, url } => PkgAction::Install { id, url },
             CliPkgAction::Delete { id } => PkgAction::Delete { id },
             CliPkgAction::Enable { id } => PkgAction::Enable { id },
+            CliPkgAction::Update { id } => PkgAction::Update { id },
         }
     }
 }
@@ -243,6 +257,17 @@ fn main() {
 
 fn run() -> Result<()> {
     let cli = SpicetifyCli::parse();
+
+    if cli.print_install_architecture {
+        let ctx = spicetify::context::build_context(
+            cli.mirror,
+            cli.spotify_data_dir.as_deref(),
+            cli.spotify_exec.as_deref(),
+            cli.offline_bnk_dir.as_deref(),
+        )?;
+        println!("{}", spicetify::update::release::platform_arch(&ctx));
+        return Ok(());
+    }
 
     spicetify::update::startup_cleanup();
 
